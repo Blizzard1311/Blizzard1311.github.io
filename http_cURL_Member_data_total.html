@@ -15,43 +15,54 @@
             const reader = new FileReader();
 
             reader.onload = function(e) {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(sheet);
-
-                // 数据统计
-                const stats = {};
-                jsonData.forEach(row => {
-                    const cardId = row['会员卡号'];
-                    if (!stats[cardId]) {
-                        stats[cardId] = {
-                            count: 0,
-                            totalAmount: 0
-                        };
+                try {
+                    let jsonData;
+                    if (file.name.endsWith('.csv')) {
+                        // 修复CSV解析逻辑
+                        const csvText = e.target.result;
+                        const workbook = XLSX.read(csvText, { type: 'string', sheetRows: 1 });
+                        jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                    } else {
+                        // 处理Excel文件
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
                     }
-                    stats[cardId].count++;
-                    stats[cardId].totalAmount += parseFloat(row['含税金额']) || 0;
-                });
 
-                // 生成结果
-                let html = '<table border="1"><tr><th>会员卡号</th><th>消费次数</th><th>总金额</th><th>客单价</th></tr>';
-                for (const [cardId, stat] of Object.entries(stats)) {
-                    const avg = stat.totalAmount / stat.count;
-                    html += `<tr>
-                        <td>${cardId}</td>
-                        <td>${stat.count}</td>
-                        <td>${stat.totalAmount.toFixed(2)}</td>
-                        <td>${avg.toFixed(2)}</td>
-                    </tr>`;
+                    // 数据统计逻辑
+                    const stats = {};
+                    jsonData.forEach(row => {
+                        const cardId = row['会员卡号']; // 确保列名匹配
+                        const amount = parseFloat(row['含税金额']) || 0;
+                        if (!stats[cardId]) {
+                            stats[cardId] = { count: 0, totalAmount: 0 };
+                        }
+                        stats[cardId].count++;
+                        stats[cardId].totalAmount += amount;
+                    });
+
+                    // 渲染结果
+                    let html = '<table border="1"><tr><th>会员卡号</th><th>消费次数</th><th>总金额</th><th>客单价</th></tr>';
+                    for (const [cardId, stat] of Object.entries(stats)) {
+                        const avg = stat.totalAmount / stat.count;
+                        html += `<tr>
+                            <td>${cardId}</td>
+                            <td>${stat.count}</td>
+                            <td>${stat.totalAmount.toFixed(2)}</td>
+                            <td>${avg.toFixed(2)}</td>
+                        </tr>`;
+                    }
+                    html += '</table>';
+                    document.getElementById('result').innerHTML = html;
+
+                } catch (error) {
+                    alert(`解析失败: ${error.message}`);
                 }
-                html += '</table>';
-                document.getElementById('result').innerHTML = html;
             };
 
-            // 读取文件
+            // 统一使用ArrayBuffer读取文件
             if (file.name.endsWith('.csv')) {
-                reader.readAsText(file);
+                reader.readAsArrayBuffer(file); // 修复CSV读取方式
             } else {
                 reader.readAsArrayBuffer(file);
             }
