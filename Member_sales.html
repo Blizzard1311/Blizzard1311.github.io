@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>会员消费分析系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: '微软雅黑', Arial;
+            background-color: #FFF3E0;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .button-group {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            background: #FFB74D;
+            color: white;
+            font-size: 16px;
+            transition: all 0.3s;
+            min-width: 120px;
+        }
+        button:hover {
+            background: #FF9800;
+            transform: scale(1.05);
+        }
+        #statusContainer {
+            margin: 15px 0;
+            min-height: 40px;
+        }
+        .status-message {
+            padding: 12px;
+            border-radius: 5px;
+            margin: 8px 0;
+            display: flex;
+            align-items: center;
+            animation: fadeIn 0.3s;
+        }
+        .success {
+            background: #C8E6C9;
+            color: #2E7D32;
+            border-left: 4px solid #2E7D32;
+        }
+        .error {
+            background: #FFCDD2;
+            color: #C62828;
+            border-left: 4px solid #C62828;
+        }
+        .processing {
+            background: #B3E5FC;
+            color: #0277BD;
+            border-left: 4px solid #0277BD;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        .modal input {
+            padding: 8px;
+            margin: 10px 0;
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="button-group">
+        <button onclick="document.getElementById('fileInput').click()">选择文件</button>
+        <button onclick="analyzeData()">开始分析</button>
+        <button onclick="downloadResults()">下载结果</button>
+        <button onclick="showMemberAnalysisModal()">个体分析</button>
+    </div>
+    <div id="statusContainer"></div>
+    <input type="file" id="fileInput" hidden accept=".csv,.xlsx,.xls">
+    <canvas id="myChart" style="max-width:800px; margin-top:30px;"></canvas>
+
+    <div id="analysisModal" class="modal">
+        <h3>会员详细分析</h3>
+        <input type="text" id="memberIdInput" placeholder="输入会员卡号后4位">
+        <button onclick="showMemberAnalysis()">查询</button>
+        <div id="memberAnalysisResult" style="margin-top:15px;"></div>
+        <button onclick="document.getElementById('analysisModal').style.display='none'" 
+                style="margin-top:10px;background:#666">
+            关闭
+        </button>
+    </div>
+
+<script>
+let analysisData = {};
+let rawData = [];
+const requiredColumns = ['会员卡号', '含税金额', '单据编号', '日期'];
+let myChart = null;
+
+// 初始化图表
+function initChart() {
+    const ctx = document.getElementById('myChart').getContext('2d');
+    if(myChart) myChart.destroy();
+    myChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: '消费金额（元）',
+                data: [],
+                backgroundColor: '#FF9800',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '￥' + value.toFixed(2);
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `￥${context.raw.toFixed(2)}`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateChart() {
+    if(!analysisData || Object.keys(analysisData).length === 0) return;
+
+    const sortedData = Object.entries(analysisData)
+        .sort((a, b) => b[1].totalAmount - a[1].totalAmount)
+        .slice(0, 10);
+
+    myChart.data.labels = sortedData.map(m => `会员 ${m[0].slice(-4)}`);
+    myChart.data.datasets[0].data = sortedData.map(m => m[1].totalAmount);
+    myChart.update();
+}
+
+function showStatus(message, type) {
+    const statusDiv = document.createElement('div');
+    statusDiv.className = `status-message ${type}`;
+    statusDiv.innerHTML = message;
+    
+    const container = document.getElementById('statusContainer');
+    container.prepend(statusDiv);
+    
+    if(container.children.length > 3) container.lastChild.remove();
+    if(type !== 'processing') setTimeout(() => statusDiv.remove(), 5000);
+}
+
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+    try {
+        showStatus('正在解析文件...', 'processing');
+        const file = e.target.files[0];
+        
+        if (!file) throw new Error('未选择文件');
+        if (!file.name.match(/\.(csv|xlsx|xls)$/i)) {
+            throw new Error('仅支持 CSV/Excel 文件');
+        }
+
+        const data = await readFile(file);
+        rawData = processRawData(data);
+        
+        showStatus(`✅ 文件上传成功！有效记录：${rawData.length} 条`, 'success');
+        document.getElementById('fileInput').value = '';
+
+    } catch (error) {
+        showStatus(`❌ 上传失败：${error.message}`, 'error');
+        console.error('文件处理错误:', error);
+    }
+});
+
+async function readFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const wb = XLSX.read(e.target.result, {type: 'array'});
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const headers = XLSX.utils.sheet_to_json(ws, {header:1})[0];
+                
+                const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+                if(missingColumns.length > 0) {
+                    throw new Error(`缺少必要列：${missingColumns.join(', ')}`);
+                }
+                
+                resolve(XLSX.utils.sheet_to_json(ws));
+            } catch (error) {
+                reject(error);
+            }
+        };
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function processRawData(data) {
+    return data
+        .map(item => ({
+            cardId: item['会员卡号']?.toString().trim(),
+            amount: parseFloat(item['含税金额']),
+            billNo: item['单据编号']?.toString().trim(),
+            date: new Date(item['日期'])
+        }))
+        .filter(item => 
+            item.cardId &&
+            !isNaN(item.amount) && 
+            item.amount > 0 &&
+            !isNaN(item.date.getTime())
+        );
+}
+
+function analyzeData() {
+    if (!rawData.length) {
+        showStatus('❌ 请先上传有效数据文件', 'error');
+        return;
+    }
+
+    try {
+        showStatus('正在分析数据...', 'processing');
+        
+        analysisData = rawData.reduce((acc, record) => {
+            if (!acc[record.cardId]) {
+                acc[record.cardId] = {
+                    totalAmount: 0,
+                    billCount: 0,
+                    firstDate: Infinity,
+                    lastDate: -Infinity
+                };
+            }
+            const member = acc[record.cardId];
+            member.totalAmount += record.amount;
+            member.billCount++;
+            const timestamp = record.date.getTime();
+            if (timestamp < member.firstDate) member.firstDate = timestamp;
+            if (timestamp > member.lastDate) member.lastDate = timestamp;
+            return acc;
+        }, {});
+
+        Object.values(analysisData).forEach(member => {
+            // 计算平均消费间隔（修正版）
+            if (member.billCount > 1) {
+                const totalDays = (member.lastDate - member.firstDate) / 86400000;
+                member.avgDays = totalDays / (member.billCount - 1);
+            } else {
+                member.avgDays = 0;
+            }
+            
+            // 计算客单价
+            member.averagePrice = member.totalAmount / member.billCount;
+        });
+
+        initChart();
+        updateChart();
+        showStatus('✅ 分析完成！可下载结果文件', 'success');
+    } catch (error) {
+        showStatus(`❌ 分析失败：${error.message}`, 'error');
+    }
+}
+
+function downloadResults() {
+    if (!analysisData || Object.keys(analysisData).length === 0) {
+        showStatus('❌ 没有可下载的分析结果', 'error');
+        return;
+    }
+
+    try {
+        const wb = XLSX.utils.book_new();
+        const wsData = [
+            ['会员卡号', '总消费金额', '消费次数', '客单价', 
+             '首次消费日期', '最后消费日期', '平均消费间隔（天）']
+        ];
+
+        Object.entries(analysisData).forEach(([cardId, data]) => {
+            wsData.push([
+                cardId,
+                data.totalAmount,
+                data.billCount,
+                data.averagePrice.toFixed(2),
+                new Date(data.firstDate).toLocaleDateString(),
+                new Date(data.lastDate).toLocaleDateString(),
+                data.avgDays.toFixed(1)
+            ]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        XLSX.utils.book_append_sheet(wb, ws, '分析结果');
+        XLSX.writeFile(wb, `会员分析_${new Date().toISOString().slice(0,10)}.xlsx`);
+        showStatus('✅ 文件下载已开始', 'success');
+    } catch (error) {
+        showStatus(`❌ 下载失败：${error.message}`, 'error');
+    }
+}
+
+function showMemberAnalysisModal() {
+    document.getElementById('analysisModal').style.display = 'block';
+}
+
+function showMemberAnalysis() {
+    const input = document.getElementById('memberIdInput').value.trim();
+    if (!input) {
+        alert('请输入会员卡号后4位');
+        return;
+    }
+
+    const member = Object.entries(analysisData).find(
+        ([cardId]) => cardId.endsWith(input)
+    );
+
+    const resultDiv = document.getElementById('memberAnalysisResult');
+    if (!member) {
+        resultDiv.innerHTML = '<div class="error">未找到匹配的会员</div>';
+        return;
+    }
+
+    const data = member[1];
+    resultDiv.innerHTML = `
+        <p>会员卡号：${member[0]}</p>
+        <p>总消费金额：￥${data.totalAmount.toFixed(2)}</p>
+        <p>消费次数：${data.billCount} 次</p>
+        <p>客单价：￥${data.averagePrice.toFixed(2)}</p>
+        <p>首次消费：${new Date(data.firstDate).toLocaleDateString()}</p>
+        <p>最后消费：${new Date(data.lastDate).toLocaleDateString()}</p>
+        <p>平均消费间隔：${data.avgDays.toFixed(1)} 天</p>
+    `;
+}
+
+initChart();
+</script>
+</body>
+</html>
