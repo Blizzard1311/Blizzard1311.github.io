@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文件处理系统</title>
+    <title>会员数据处理系统</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -88,6 +88,10 @@
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
+        }
+        /* 修改：数字列右对齐 */
+        td.number {
+            text-align: right;
         }
         th {
             background-color: #f2f2f2;
@@ -292,7 +296,7 @@
             }
         }
         
-        // 消费频次洞察
+        // 消费频次洞察 - 已修复日期偏移问题
         function generateFrequencyInsight() {
             if (!fileData || fileData.length === 0) {
                 showError('没有可用的数据进行分析');
@@ -313,24 +317,33 @@
                     // 尝试解析日期
                     let date;
                     if (typeof dateStr === 'string') {
-                        // 尝试解析各种可能的日期格式
+                        // 统一日期格式处理
                         const parts = dateStr.split(/[-\/]/);
                         if (parts.length >= 3) {
-                            date = new Date(parts[0], parts[1] - 1, parts[2]);
+                            // 确保年份是4位数
+                            let year = parseInt(parts[0]);
+                            if (year < 100) year += 2000; // 假设两位数年份是21世纪
+                            date = new Date(year, parseInt(parts[1]) - 1, parseInt(parts[2]));
                         }
                     } else if (dateStr instanceof Date) {
                         date = dateStr;
+                    } else if (typeof dateStr === 'number') {
+                        // 处理Excel日期序列号
+                        date = new Date((dateStr - 25569) * 86400 * 1000);
                     }
                     
-                    if (!isNaN(date)) {
+                    if (date && !isNaN(date.getTime())) { // 确保日期有效
                         if (!frequencyData[memberCard]) {
                             frequencyData[memberCard] = {
                                 dates: new Set()
                             };
                         }
                         
-                        // 添加日期（按天计）
-                        const dateKey = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+                        // 修复：使用本地日期格式而不是ISO格式，避免时区问题
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const dateKey = `${year}-${month}-${day}`;
                         frequencyData[memberCard].dates.add(dateKey);
                     }
                 });
@@ -342,12 +355,12 @@
                     const uniqueDateCount = data.dates.size;
                     
                     if (uniqueDateCount > 1) {
-                        // 找出第一次和最后一次消费日期
-                        const sortedDates = Array.from(data.dates).sort();
+                        // 找出第一次和最后一次消费日期 - 修复排序问题
+                        const sortedDates = Array.from(data.dates).sort((a, b) => new Date(a) - new Date(b));
                         const firstDate = new Date(sortedDates[0]);
                         const lastDate = new Date(sortedDates[sortedDates.length - 1]);
                         
-                        // 计算天数间隔
+                        // 计算天数间隔 - 确保正值
                         const daysDiff = Math.round((lastDate - firstDate) / (1000 * 60 * 60 * 24));
                         
                         // 计算平均消费频率（天/次）
@@ -363,11 +376,12 @@
                         });
                     } else {
                         // 只有一次消费记录
+                        const dateValue = Array.from(data.dates)[0];
                         results.push({
                             '会员卡号': memberCard,
                             '消费天数': uniqueDateCount,
-                            '首次消费日期': Array.from(data.dates)[0],
-                            '最近消费日期': Array.from(data.dates)[0],
+                            '首次消费日期': dateValue,
+                            '最近消费日期': dateValue,
                             '消费时间跨度(天)': 0,
                             '平均消费频率(天/次)': '仅有一次消费'
                         });
@@ -389,7 +403,7 @@
             }
         }
         
-        // 品类洞察
+        // 品类洞察 - 修改百分比计算逻辑，确保没有负值
         function generateCategoryInsight() {
             if (!fileData || fileData.length === 0) {
                 showError('没有可用的数据进行分析');
@@ -459,19 +473,22 @@
                 // 准备结果数据
                 const results = [];
                 for (const [memberCard, categories] of Object.entries(categoryData)) {
-                    const totalAmount = totalAmountByMember[memberCard];
+                    const totalAmount = totalAmountByMember[memberCard] || 0;
                     
                     for (const [category1, cat1Data] of Object.entries(categories)) {
-                        const cat1Amount = cat1Data.amount;
-                        const cat1Percentage = totalAmount !== 0 ? (cat1Amount / totalAmount * 100) : 0;
+                        const cat1Amount = cat1Data.amount || 0;
+                        // 修改：确保不会计算负百分比
+                        const cat1Percentage = totalAmount > 0 ? Math.max(0, (cat1Amount / totalAmount * 100)) : 0;
                         
                         for (const [category2, cat2Data] of Object.entries(cat1Data.subCategories)) {
-                            const cat2Amount = cat2Data.amount;
-                            const cat2Percentage = totalAmount !== 0 ? (cat2Amount / totalAmount * 100) : 0;
+                            const cat2Amount = cat2Data.amount || 0;
+                            // 修改：确保不会计算负百分比
+                            const cat2Percentage = totalAmount > 0 ? Math.max(0, (cat2Amount / totalAmount * 100)) : 0;
                             
                             for (const [category3, cat3Data] of Object.entries(cat2Data.subCategories)) {
-                                const cat3Amount = cat3Data.amount;
-                                const cat3Percentage = totalAmount !== 0 ? (cat3Amount / totalAmount * 100) : 0;
+                                const cat3Amount = cat3Data.amount || 0;
+                                // 修改：确保不会计算负百分比
+                                const cat3Percentage = totalAmount > 0 ? Math.max(0, (cat3Amount / totalAmount * 100)) : 0;
                                 
                                 results.push({
                                     '会员卡号': memberCard,
@@ -505,7 +522,7 @@
             }
         }
         
-        // 显示处理结果
+        // 显示处理结果 - 修改以改进表格排版
         function displayResults(data, title) {
             if (!data || data.length === 0) {
                 showError('没有可用的数据显示');
@@ -522,9 +539,23 @@
             const thead = document.createElement('thead');
             const headerRow = document.createElement('tr');
             
+            // 定义哪些列应该右对齐（通常是数字列）
+            const numericColumns = [
+                '消费总次数', '消费总金额', '客单价', 
+                '消费天数', '消费时间跨度(天)', '平均消费频率(天/次)',
+                '一级子类金额', '一级子类占比', '二级子类金额', '二级子类占比', '三级子类金额', '三级子类占比'
+            ];
+            
+            const columnTypes = {};
+            
             for (const key of Object.keys(data[0])) {
                 const th = document.createElement('th');
                 th.textContent = key;
+                // 设置数字列的表头右对齐
+                if (numericColumns.includes(key)) {
+                    th.style.textAlign = 'right';
+                    columnTypes[key] = 'number';
+                }
                 headerRow.appendChild(th);
             }
             
@@ -544,6 +575,12 @@
                 for (const key of Object.keys(row)) {
                     const td = document.createElement('td');
                     td.textContent = row[key];
+                    
+                    // 对数字列应用右对齐样式
+                    if (columnTypes[key] === 'number') {
+                        td.className = 'number';
+                    }
+                    
                     tr.appendChild(td);
                 }
                 
