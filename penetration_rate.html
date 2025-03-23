@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>财务报表分析工具</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <h2>财务报表分析工具</h2>
+    <input type="file" id="fileInput" accept=".csv,.xlsx"/>
+    <button onclick="startAnalysis()" id="analyzeBtn" disabled>开始分析</button>
+    <button onclick="downloadResult()" id="downloadBtn" disabled>下载结果</button>
+    <div id="status" style="margin-top:20px;"></div>
+
+<script>
+let analysisResults = {};
+let uploadedFile = null;
+
+const COLUMN_MAPPING = {
+    department: "部门",
+    category1: "一级子类",
+    category2: "二级子类",
+    category3: "三级子类",
+    amount: "含税金额",
+    orderNo: "单据编号"
+};
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+    uploadedFile = e.target.files[0];
+    document.getElementById('analyzeBtn').disabled = !uploadedFile;
+    showStatus('文件已选择', 'green');
+});
+
+async function startAnalysis() {
+    if (!uploadedFile) return;
+    
+    try {
+        showStatus('分析进行中...', 'blue');
+        const rawData = await readFile(uploadedFile);
+        const validatedData = validateData(rawData);
+        processData(validatedData);
+        showStatus('分析完成，可下载结果', 'green');
+        document.getElementById('downloadBtn').disabled = false;
+    } catch (e) {
+        showStatus(e.message, 'red');
+        console.error(e);
+    }
+}
+
+async function readFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const wb = XLSX.read(e.target.result, { type: 'array' });
+                resolve(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]));
+            } catch (e) {
+                reject(new Error('文件解析失败：请检查文件格式'));
+            }
+        };
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function validateData(rawData) {
+    if (!rawData || rawData.length === 0) throw new Error('错误：文件内容为空');
+    
+    const firstRowKeys = Object.keys(rawData[0]);
+    const requiredColumns = Object.values(COLUMN_MAPPING);
+    const missingColumns = requiredColumns.filter(col => !firstRowKeys.includes(col));
+    
+    if (missingColumns.length > 0) {
+        throw new Error(`缺少必要列：${missingColumns.join("、")}<br>
+            请确保文件包含以下列：${requiredColumns.join("、")}`);
+    }
+
+    return rawData.map(row => ({
+        department: row[COLUMN_MAPPING.department],
+        category1: row[COLUMN_MAPPING.category1],
+        category2: row[COLUMN_MAPPING.category2],
+        category3: row[COLUMN_MAPPING.category3],
+        amount: parseFloat(row[COLUMN_MAPPING.amount]),
+        orderNo: row[COLUMN_MAPPING.orderNo]
+    }));
+}
+
+function processData(data) {
+    const orders = data.reduce((acc, row) => {
+        acc[row.orderNo] = acc[row.orderNo] || [];
+        acc[row.orderNo].push(row);
+        return acc;
+    }, {});
+
+    const counters = {
+        department: {},
+        category1: {},
+        penetration: { 1: {}, 2: {}, 3: {} },
+        uniquePenetration: { 1: {}, 2: {}, 3: {} }
+    };
+
+    Object.values(orders).forEach(order => {
+        const categories = { 1: new Set(), 2: new Set(), 3: new Set() };
+
+        order.forEach(item => {
+            counters.department[item.department] = 
+                (counters.department[item.department] || 0) + item.amount;
+            counters.category1[item.category1] = 
+                (counters.category1[item.category1] || 0) + item.amount;
+
+            categories[1].add(item.category1);
+            categories[2].add(item.category2);
+            categories[3].add(item.category3);
+        });
+
+        // 常规渗透率统计
+        [1, 2, 3].forEach(level => {
+            categories[level].forEach(cat => {
+                counters.penetration[level][cat] = 
+                    (counters.penetration[level][cat] || 0) + 1;
+            });
+        });
+
+        // 唯一渗透率统计
+        [1, 2, 3].forEach(level => {
+            if (categories[level].size === 1) {
+                const cat = [...categories[level]][0];
+                counters.uniquePenetration[level][cat] = 
+                    (counters.uniquePenetration[level][cat] || 0) + 1;
+            }
+        });
+    });
+
+    const totalOrders = Object.keys(orders).length;
+    
+    analysisResults = {
+        // 基础统计
+        "部门统计": formatStats(counters.department),
+        "一级子类统计": formatStats(counters.category1),
+        
+        // 渗透率分析
+        "一级渗透率": formatLevelRates(counters.penetration[1], totalOrders),
+        "二级渗透率": formatLevelRates(counters.penetration[2], totalOrders),
+        "三级渗透率": formatLevelRates(counters.penetration[3], totalOrders),
+        
+        // 唯一渗透率分析
+        "一级唯一渗透率": formatLevelRates(counters.uniquePenetration[1], totalOrders),
+        "二级唯一渗透率": formatLevelRates(counters.uniquePenetration[2], totalOrders),
+        "三级唯一渗透率": formatLevelRates(counters.uniquePenetration[3], totalOrders)
+    };
+}
+
+function formatStats(data) {
+    return Object.entries(data).map(([key, value]) => ({
+        "分类名称": key,
+        "合计金额": Number(value.toFixed(2))
+    }));
+}
+
+function formatLevelRates(data, total) {
+    return Object.entries(data).map(([category, count]) => ({
+        "分类名称": category,
+        "渗透率": total ? `${((count / total) * 100).toFixed(2)}%` : '0.00%'
+    }));
+}
+
+function downloadResult() {
+    const wb = XLSX.utils.book_new();
+    Object.entries(analysisResults).forEach(([sheetName, data]) => {
+        const ws = XLSX.utils.json_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+    XLSX.writeFile(wb, '财务分析报告.xlsx');
+}
+
+function showStatus(text, color) {
+    const statusDiv = document.getElementById('status');
+    statusDiv.innerHTML = text;
+    statusDiv.style.color = color || 'black';
+}
+</script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+input, button {
+    margin: 10px;
+    padding: 8px 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+}
+button {
+    background: #2196F3;
+    color: white;
+    border-color: #2196F3;
+}
+button:disabled {
+    background: #9E9E9E;
+    border-color: #9E9E9E;
+}
+#status {
+    padding: 10px;
+    border-radius: 4px;
+    min-height: 20px;
+}
+</style>
+</body>
+</html>
