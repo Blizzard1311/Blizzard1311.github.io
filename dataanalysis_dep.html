@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>数据分析工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <style>
+        .container {
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        button {
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .charts {
+            display: flex;
+            gap: 30px;
+            margin-top: 30px;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 500px;
+            position: relative;
+        }
+        .status {
+            margin: 10px 0;
+            color: #28a745;
+        }
+        .download-chart {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="button-group">
+            <input type="file" id="fileInput" hidden accept=".csv,.xlsx,.xls"/>
+            <button onclick="document.getElementById('fileInput').click()">选择文件</button>
+            <button onclick="analyzeData()">开始分析</button>
+            <button onclick="downloadResults()" id="downloadBtn" disabled>下载结果</button>
+        </div>
+        <div id="uploadStatus" class="status"></div>
+        <div class="charts">
+            <div class="chart-container">
+                <canvas id="departmentChart"></canvas>
+                <button class="download-chart" onclick="downloadChart('departmentChart')">下载部门图表</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="subCategoryChart"></canvas>
+                <button class="download-chart" onclick="downloadChart('subCategoryChart')">下载子类图表</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+// 注册插件
+Chart.register(ChartDataLabels);
+
+let rawData = [];
+let analysisResults = {};
+let chartInstances = {};
+
+// 文件读取
+document.getElementById('fileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        rawData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        document.getElementById('uploadStatus').innerHTML = 
+            `✓ 已成功上传文件：${file.name}`;
+    };
+    
+    reader.readAsArrayBuffer(file);
+});
+
+// 数据分析
+function analyzeData() {
+    // 部门统计
+    const departmentData = {};
+    // 子类统计
+    const subCategoryData = {};
+
+    rawData.forEach(row => {
+        // 部门统计
+        const dept = row['部门'];
+        departmentData[dept] = (departmentData[dept] || 0) + (row['含税金额'] || 0);
+        
+        // 一级子类统计
+        const l1 = row['一级子类'];
+        subCategoryData[l1] = (subCategoryData[l1] || 0) + (row['含税金额'] || 0);
+    });
+
+    // 处理部门数据
+    const sortedDept = Object.entries(departmentData).sort((a,b) => b[1]-a[1]);
+    analysisResults.departments = sortedDept;
+    
+    // 处理子类数据
+    const sortedSub = Object.entries(subCategoryData).sort((a,b) => b[1]-a[1]);
+    analysisResults.subCategories = sortedSub;
+
+    // 生成图表
+    createChart('departmentChart', sortedDept, '部门统计');
+    createChart('subCategoryChart', sortedSub, '一级子类统计');
+    
+    document.getElementById('downloadBtn').disabled = false;
+}
+
+// 创建饼图
+function createChart(canvasId, data, title) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    const total = data.reduce((sum, item) => sum + item[1], 0);
+    
+    // 销毁旧图表实例
+    if(chartInstances[canvasId]) {
+        chartInstances[canvasId].destroy();
+    }
+
+    chartInstances[canvasId] = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: data.map(item => item[0]),
+            datasets: [{
+                data: data.map(item => item[1]),
+                backgroundColor: ['#007bff', '#28a745', '#ffc107', '#dc3545', '#17a2b8'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                title: {
+                    display: true,
+                    text: title,
+                    font: { size: 16 }
+                },
+                datalabels: {
+                    formatter: (value, context) => {
+                        // 只显示前两名的标签
+                        if(context.dataIndex < 2) {
+                            const percentage = ((value / total) * 100).toFixed(1) + '%';
+                            return [context.chart.data.labels[context.dataIndex], percentage];
+                        }
+                        return null;
+                    },
+                    color: '#fff',
+                    font: { size: 12, weight: 'bold' },
+                    anchor: 'end',
+                    align: 'start',
+                    offset: 10
+                }
+            }
+        },
+        plugins: [ChartDataLabels]
+    });
+}
+
+// 下载图表
+function downloadChart(chartId) {
+    const canvas = document.getElementById(chartId);
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${chartId}.png`;
+    a.click();
+}
+
+// 生成并下载结果
+function downloadResults() {
+    const wb = XLSX.utils.book_new();
+    
+    // 部门统计表
+    const deptSheet = XLSX.utils.json_to_sheet(analysisResults.departments.map(item => ({
+        '部门': item[0],
+        '金额': item[1]
+    })));
+    XLSX.utils.book_append_sheet(wb, deptSheet, "部门统计");
+    
+    // 子类统计表
+    const subSheet = XLSX.utils.json_to_sheet(analysisResults.subCategories.map(item => ({
+        '一级子类': item[0],
+        '金额': item[1]
+    })));
+    XLSX.utils.book_append_sheet(wb, subSheet, "子类统计");
+    
+    // 生成文件
+    const wbout = XLSX.write(wb, {bookType: 'xlsx', type: 'array'});
+    saveAs(new Blob([wbout], {type: "application/octet-stream"}), "分析结果.xlsx");
+}
+</script>
+</body>
+</html>
