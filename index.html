@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据分析门户</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="auth-container" id="authContainer">
+        <div class="form-container">
+            <form id="loginForm">
+                <h2>用户登录</h2>
+                <input type="text" placeholder="用户名" required id="loginUsername">
+                <input type="password" placeholder="密码" required id="loginPassword">
+                <button type="submit">登录</button>
+                <p class="toggle-form">没有账号？<a href="#" onclick="showRegister()">立即注册</a></p>
+            </form>
+
+            <form id="registerForm" style="display: none;">
+                <h2>用户注册</h2>
+                <input type="text" placeholder="用户名" required id="registerUsername">
+                <input type="password" placeholder="密码" required id="registerPassword">
+                <input type="password" placeholder="确认密码" required id="confirmPassword">
+                <button type="submit">注册</button>
+                <p class="toggle-form">已有账号？<a href="#" onclick="showLogin()">立即登录</a></p>
+            </form>
+        </div>
+    </div>
+
+    <div class="dashboard" id="dashboard" style="display: none;">
+        <h1>数据分析平台</h1>
+        <div class="nav-grid">
+            <button class="data-btn" onclick="openLink('dep')">部门数据统计</button>
+            <button class="data-btn" onclick="openLink('member')">会员数据</button>
+            <button class="data-btn" onclick="openLink('rate')">渗透率</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
