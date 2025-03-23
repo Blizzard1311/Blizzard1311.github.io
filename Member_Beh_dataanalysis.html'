@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件处理系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .button-container {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px 0;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .upload-container {
+            margin-top: 20px;
+        }
+        .progress-container {
+            width: 100%;
+            background-color: #ddd;
+            margin-top: 10px;
+            display: none;
+        }
+        .progress-bar {
+            height: 20px;
+            width: 0;
+            background-color: #4CAF50;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+        }
+        .message {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        #results {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        /* 修改：数字列右对齐 */
+        td.number {
+            text-align: right;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>数据洞察与分析系统</h1>
+        
+        <div class="button-container">
+            <button id="uploadBtn">上传文件</button>
+            <button id="customerInsightBtn" disabled>顾客质量洞察</button>
+            <button id="frequencyInsightBtn" disabled>消费频次洞察</button>
+            <button id="categoryInsightBtn" disabled>品类洞察</button>
+            <button id="downloadBtn" disabled>下载报告</button>
+        </div>
+        
+        <div class="upload-container">
+            <input type="file" id="fileInput" accept=".csv, .xlsx, .xls" style="display: none;">
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar" id="progressBar">0%</div>
+            </div>
+            <div id="message" class="message"></div>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+    
+    <script>
+        // 全局变量
+        let fileData = null;
+        let processedData = {
+            customerInsight: null,
+            frequencyInsight: null,
+            categoryInsight: null
+        };
+        
+        // 初始化事件监听器
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('uploadBtn').addEventListener('click', function() {
+                document.getElementById('fileInput').click();
+            });
+            
+            document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+            document.getElementById('customerInsightBtn').addEventListener('click', generateCustomerInsight);
+            document.getElementById('frequencyInsightBtn').addEventListener('click', generateFrequencyInsight);
+            document.getElementById('categoryInsightBtn').addEventListener('click', generateCategoryInsight);
+            document.getElementById('downloadBtn').addEventListener('click', downloadReport);
+        });
+        
+        // 处理文件上传
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // 显示进度条
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            
+            // 模拟上传进度
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 5;
+                if (progress > 90) clearInterval(interval);
+                progressBar.style.width = progress + '%';
+                progressBar.textContent = progress + '%';
+            }, 100);
+            
+            // 读取文件
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    const data = e.target.result;
+                    
+                    // 根据文件类型处理数据
+                    const workbook = XLSX.read(data, { type: 'binary' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // 转换为JSON
+                    fileData = XLSX.utils.sheet_to_json(worksheet);
+                    
+                    // 完成上传进度
+                    clearInterval(interval);
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                    
+                    // 显示成功消息
+                    const messageDiv = document.getElementById('message');
+                    messageDiv.className = 'message success';
+                    messageDiv.innerHTML = `
+                        <strong>上传成功!</strong><br>
+                        文件名: ${file.name}<br>
+                        文件大小: ${(file.size / 1024).toFixed(2)} KB<br>
+                        记录条数: ${fileData.length}
+                    `;
+                    
+                    // 启用分析按钮
+                    document.getElementById('customerInsightBtn').disabled = false;
+                    document.getElementById('frequencyInsightBtn').disabled = false;
+                    document.getElementById('categoryInsightBtn').disabled = false;
+                    
+                } catch (error) {
+                    console.error('文件解析错误:', error);
+                    
+                    // 显示错误消息
+                    const messageDiv = document.getElementById('message');
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = '文件解析失败，请确保上传正确格式的CSV或Excel文件。';
+                    
+                    // 清理进度条
+                    clearInterval(interval);
+                    progressContainer.style.display = 'none';
+                }
+            };
+            
+            reader.onerror = function() {
+                // 显示错误消息
+                const messageDiv = document.getElementById('message');
+                messageDiv.className = 'message error';
+                messageDiv.textContent = '文件读取失败，请重试。';
+                
+                // 清理进度条
+                clearInterval(interval);
+                progressContainer.style.display = 'none';
+            };
+            
+            // 读取文件为二进制字符串
+            reader.readAsBinaryString(file);
+        }
+        
+        // 顾客质量洞察
+        function generateCustomerInsight() {
+            if (!fileData || fileData.length === 0) {
+                showError('没有可用的数据进行分析');
+                return;
+            }
+            
+            try {
+                // 分析每个会员的消费情况
+                const customerData = {};
+                
+                // 遍历所有数据记录
+                fileData.forEach(record => {
+                    const memberCard = record['会员卡号'];
+                    const orderId = record['单据编号'];
+                    const amount = parseFloat(record['含税金额'] || 0);
+                    
+                    if (!memberCard) return;
+                    
+                    if (!customerData[memberCard]) {
+                        customerData[memberCard] = {
+                            totalAmount: 0,
+                            orders: new Set(),
+                        };
+                    }
+                    
+                    customerData[memberCard].totalAmount += amount;
+                    if (orderId) {
+                        customerData[memberCard].orders.add(orderId);
+                    }
+                });
+                
+                // 准备结果数据
+                const results = [];
+                for (const [memberCard, data] of Object.entries(customerData)) {
+                    const totalOrders = data.orders.size;
+                    const totalAmount = data.totalAmount;
+                    const averageAmount = totalOrders > 0 ? totalAmount / totalOrders : 0;
+                    
+                    results.push({
+                        '会员卡号': memberCard,
+                        '消费总次数': totalOrders,
+                        '消费总金额': totalAmount.toFixed(2),
+                        '客单价': averageAmount.toFixed(2)
+                    });
+                }
+                
+                // 保存处理结果
+                processedData.customerInsight = results;
+                
+                // 显示结果
+                displayResults(results, '顾客质量洞察');
+                
+                // 启用下载按钮
+                document.getElementById('downloadBtn').disabled = false;
+                
+            } catch (error) {
+                console.error('处理数据时出错:', error);
+                showError('处理数据时出错: ' + error.message);
+            }
+        }
+        
+        // 消费频次洞察 - 已修复日期偏移问题
+        function generateFrequencyInsight() {
+            if (!fileData || fileData.length === 0) {
+                showError('没有可用的数据进行分析');
+                return;
+            }
+            
+            try {
+                // 分析每个会员的消费频次
+                const frequencyData = {};
+                
+                // 遍历所有数据记录，按会员卡号和日期分组
+                fileData.forEach(record => {
+                    const memberCard = record['会员卡号'];
+                    const dateStr = record['日期'] || record['消费日期'] || record['交易日期'];
+                    
+                    if (!memberCard || !dateStr) return;
+                    
+                    // 尝试解析日期
+                    let date;
+                    if (typeof dateStr === 'string') {
+                        // 统一日期格式处理
+                        const parts = dateStr.split(/[-\/]/);
+                        if (parts.length >= 3) {
+                            // 确保年份是4位数
+                            let year = parseInt(parts[0]);
+                            if (year < 100) year += 2000; // 假设两位数年份是21世纪
+                            date = new Date(year, parseInt(parts[1]) - 1, parseInt(parts[2]));
+                        }
+                    } else if (dateStr instanceof Date) {
+                        date = dateStr;
+                    } else if (typeof dateStr === 'number') {
+                        // 处理Excel日期序列号
+                        date = new Date((dateStr - 25569) * 86400 * 1000);
+                    }
+                    
+                    if (date && !isNaN(date.getTime())) { // 确保日期有效
+                        if (!frequencyData[memberCard]) {
+                            frequencyData[memberCard] = {
+                                dates: new Set()
+                            };
+                        }
+                        
+                        // 修复：使用本地日期格式而不是ISO格式，避免时区问题
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const dateKey = `${year}-${month}-${day}`;
+                        frequencyData[memberCard].dates.add(dateKey);
+                    }
+                });
+                
+                // 计算消费频次
+                const results = [];
+                for (const [memberCard, data] of Object.entries(frequencyData)) {
+                    // 获取不同的消费日期数量
+                    const uniqueDateCount = data.dates.size;
+                    
+                    if (uniqueDateCount > 1) {
+                        // 找出第一次和最后一次消费日期 - 修复排序问题
+                        const sortedDates = Array.from(data.dates).sort((a, b) => new Date(a) - new Date(b));
+                        const firstDate = new Date(sortedDates[0]);
+                        const lastDate = new Date(sortedDates[sortedDates.length - 1]);
+                        
+                        // 计算天数间隔 - 确保正值
+                        const daysDiff = Math.round((lastDate - firstDate) / (1000 * 60 * 60 * 24));
+                        
+                        // 计算平均消费频率（天/次）
+                        const frequency = daysDiff / (uniqueDateCount - 1);
+                        
+                        results.push({
+                            '会员卡号': memberCard,
+                            '消费天数': uniqueDateCount,
+                            '首次消费日期': sortedDates[0],
+                            '最近消费日期': sortedDates[sortedDates.length - 1],
+                            '消费时间跨度(天)': daysDiff,
+                            '平均消费频率(天/次)': frequency.toFixed(2)
+                        });
+                    } else {
+                        // 只有一次消费记录
+                        const dateValue = Array.from(data.dates)[0];
+                        results.push({
+                            '会员卡号': memberCard,
+                            '消费天数': uniqueDateCount,
+                            '首次消费日期': dateValue,
+                            '最近消费日期': dateValue,
+                            '消费时间跨度(天)': 0,
+                            '平均消费频率(天/次)': '仅有一次消费'
+                        });
+                    }
+                }
+                
+                // 保存处理结果
+                processedData.frequencyInsight = results;
+                
+                // 显示结果
+                displayResults(results, '消费频次洞察');
+                
+                // 启用下载按钮
+                document.getElementById('downloadBtn').disabled = false;
+                
+            } catch (error) {
+                console.error('处理数据时出错:', error);
+                showError('处理数据时出错: ' + error.message);
+            }
+        }
+        
+        // 品类洞察 - 修改百分比计算逻辑，确保没有负值
+        function generateCategoryInsight() {
+            if (!fileData || fileData.length === 0) {
+                showError('没有可用的数据进行分析');
+                return;
+            }
+            
+            try {
+                // 分析每个会员的品类消费情况
+                const categoryData = {};
+                const totalAmountByMember = {};
+                
+                // 先计算每个会员的总消费金额
+                fileData.forEach(record => {
+                    const memberCard = record['会员卡号'];
+                    const amount = parseFloat(record['含税金额'] || 0);
+                    
+                    if (!memberCard) return;
+                    
+                    if (!totalAmountByMember[memberCard]) {
+                        totalAmountByMember[memberCard] = 0;
+                    }
+                    
+                    totalAmountByMember[memberCard] += amount;
+                });
+                
+                // 分析每个会员的品类消费情况
+                fileData.forEach(record => {
+                    const memberCard = record['会员卡号'];
+                    const category1 = record['一级子类'] || '未分类';
+                    const category2 = record['二级子类'] || '未分类';
+                    const category3 = record['三级子类'] || '未分类';
+                    const amount = parseFloat(record['含税金额'] || 0);
+                    
+                    if (!memberCard) return;
+                    
+                    if (!categoryData[memberCard]) {
+                        categoryData[memberCard] = {};
+                    }
+                    
+                    // 一级品类
+                    if (!categoryData[memberCard][category1]) {
+                        categoryData[memberCard][category1] = {
+                            amount: 0,
+                            subCategories: {}
+                        };
+                    }
+                    categoryData[memberCard][category1].amount += amount;
+                    
+                    // 二级品类
+                    if (!categoryData[memberCard][category1].subCategories[category2]) {
+                        categoryData[memberCard][category1].subCategories[category2] = {
+                            amount: 0,
+                            subCategories: {}
+                        };
+                    }
+                    categoryData[memberCard][category1].subCategories[category2].amount += amount;
+                    
+                    // 三级品类
+                    if (!categoryData[memberCard][category1].subCategories[category2].subCategories[category3]) {
+                        categoryData[memberCard][category1].subCategories[category2].subCategories[category3] = {
+                            amount: 0
+                        };
+                    }
+                    categoryData[memberCard][category1].subCategories[category2].subCategories[category3].amount += amount;
+                });
+                
+                // 准备结果数据
+                const results = [];
+                for (const [memberCard, categories] of Object.entries(categoryData)) {
+                    const totalAmount = totalAmountByMember[memberCard] || 0;
+                    
+                    for (const [category1, cat1Data] of Object.entries(categories)) {
+                        const cat1Amount = cat1Data.amount || 0;
+                        // 修改：确保不会计算负百分比
+                        const cat1Percentage = totalAmount > 0 ? Math.max(0, (cat1Amount / totalAmount * 100)) : 0;
+                        
+                        for (const [category2, cat2Data] of Object.entries(cat1Data.subCategories)) {
+                            const cat2Amount = cat2Data.amount || 0;
+                            // 修改：确保不会计算负百分比
+                            const cat2Percentage = totalAmount > 0 ? Math.max(0, (cat2Amount / totalAmount * 100)) : 0;
+                            
+                            for (const [category3, cat3Data] of Object.entries(cat2Data.subCategories)) {
+                                const cat3Amount = cat3Data.amount || 0;
+                                // 修改：确保不会计算负百分比
+                                const cat3Percentage = totalAmount > 0 ? Math.max(0, (cat3Amount / totalAmount * 100)) : 0;
+                                
+                                results.push({
+                                    '会员卡号': memberCard,
+                                    '一级子类': category1,
+                                    '一级子类金额': cat1Amount.toFixed(2),
+                                    '一级子类占比': cat1Percentage.toFixed(2) + '%',
+                                    '二级子类': category2,
+                                    '二级子类金额': cat2Amount.toFixed(2),
+                                    '二级子类占比': cat2Percentage.toFixed(2) + '%',
+                                    '三级子类': category3,
+                                    '三级子类金额': cat3Amount.toFixed(2),
+                                    '三级子类占比': cat3Percentage.toFixed(2) + '%'
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                // 保存处理结果
+                processedData.categoryInsight = results;
+                
+                // 显示结果
+                displayResults(results, '品类洞察');
+                
+                // 启用下载按钮
+                document.getElementById('downloadBtn').disabled = false;
+                
+            } catch (error) {
+                console.error('处理数据时出错:', error);
+                showError('处理数据时出错: ' + error.message);
+            }
+        }
+        
+        // 显示处理结果 - 修改以改进表格排版
+        function displayResults(data, title) {
+            if (!data || data.length === 0) {
+                showError('没有可用的数据显示');
+                return;
+            }
+            
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `<h2>${title}</h2>`;
+            
+            // 创建表格
+            const table = document.createElement('table');
+            
+            // 创建表头
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            
+            // 定义哪些列应该右对齐（通常是数字列）
+            const numericColumns = [
+                '消费总次数', '消费总金额', '客单价', 
+                '消费天数', '消费时间跨度(天)', '平均消费频率(天/次)',
+                '一级子类金额', '一级子类占比', '二级子类金额', '二级子类占比', '三级子类金额', '三级子类占比'
+            ];
+            
+            const columnTypes = {};
+            
+            for (const key of Object.keys(data[0])) {
+                const th = document.createElement('th');
+                th.textContent = key;
+                // 设置数字列的表头右对齐
+                if (numericColumns.includes(key)) {
+                    th.style.textAlign = 'right';
+                    columnTypes[key] = 'number';
+                }
+                headerRow.appendChild(th);
+            }
+            
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+            
+            // 创建表体
+            const tbody = document.createElement('tbody');
+            
+            // 只显示前 100 行数据（避免浏览器卡顿）
+            const displayLimit = 100;
+            const dataToShow = data.slice(0, displayLimit);
+            
+            dataToShow.forEach(row => {
+                const tr = document.createElement('tr');
+                
+                for (const key of Object.keys(row)) {
+                    const td = document.createElement('td');
+                    td.textContent = row[key];
+                    
+                    // 对数字列应用右对齐样式
+                    if (columnTypes[key] === 'number') {
+                        td.className = 'number';
+                    }
+                    
+                    tr.appendChild(td);
+                }
+                
+                tbody.appendChild(tr);
+            });
+            
+            table.appendChild(tbody);
+            resultsDiv.appendChild(table);
+            
+            // 如果数据超过限制，显示提示信息
+            if (data.length > displayLimit) {
+                const notice = document.createElement('p');
+                notice.textContent = `* 为保证性能，仅显示前 ${displayLimit} 条数据。完整数据将包含在下载的报告中。`;
+                resultsDiv.appendChild(notice);
+            }
+        }
+        
+        // 下载报告
+        function downloadReport() {
+            try {
+                // 创建一个新的工作簿
+                const workbook = XLSX.utils.book_new();
+                
+                // 添加顾客质量洞察工作表
+                if (processedData.customerInsight && processedData.customerInsight.length > 0) {
+                    const customerSheet = XLSX.utils.json_to_sheet(processedData.customerInsight);
+                    XLSX.utils.book_append_sheet(workbook, customerSheet, "顾客质量洞察");
+                }
+                
+                // 添加消费频次洞察工作表
+                if (processedData.frequencyInsight && processedData.frequencyInsight.length > 0) {
+                    const frequencySheet = XLSX.utils.json_to_sheet(processedData.frequencyInsight);
+                    XLSX.utils.book_append_sheet(workbook, frequencySheet, "消费频次洞察");
+                }
+                
+                // 添加品类洞察工作表
+                if (processedData.categoryInsight && processedData.categoryInsight.length > 0) {
+                    const categorySheet = XLSX.utils.json_to_sheet(processedData.categoryInsight);
+                    XLSX.utils.book_append_sheet(workbook, categorySheet, "品类洞察");
+                }
+                
+                // 导出Excel文件
+                const currentDate = new Date();
+                const dateString = `${currentDate.getFullYear()}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}`;
+                const fileName = `消费洞察报告_${dateString}.xlsx`;
+                
+                XLSX.writeFile(workbook, fileName);
+                
+                // 显示成功消息
+                const messageDiv = document.getElementById('message');
+                messageDiv.className = 'message success';
+                messageDiv.textContent = `报告已成功导出为 ${fileName}`;
+                
+            } catch (error) {
+                console.error('导出报告时出错:', error);
+                showError('导出报告时出错: ' + error.message);
+            }
+        }
+        
+        // 显示错误消息
+        function showError(message) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = 'message error';
+            messageDiv.textContent = message;
+        }
+    </script>
+</body>
+</html>
