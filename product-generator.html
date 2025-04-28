@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品信息生成器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .export-btn {
+            margin-top: 20px;
+            background-color: #2196F3;
+        }
+        .export-btn:hover {
+            background-color: #0b7dda;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>商品信息生成器</h1>
+        
+        <div class="form-group">
+            <label for="category">品类:</label>
+            <select id="category">
+                <option value="服装">服装</option>
+                <option value="食品">食品</option>
+                <option value="电子产品">电子产品</option>
+                <option value="家具">家具</option>
+                <option value="美妆">美妆</option>
+                <option value="母婴">母婴</option>
+                <option value="玩具">玩具</option>
+                <option value="家电">家电</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="specMin">规格范围 (最小):</label>
+            <input type="text" id="specMin" placeholder="例如: S">
+        </div>
+        
+        <div class="form-group">
+            <label for="specMax">规格范围 (最大):</label>
+            <input type="text" id="specMax" placeholder="例如: XXL">
+        </div>
+        
+        <div class="form-group">
+            <label for="priceMin">售价区间 (最小):</label>
+            <input type="number" id="priceMin" min="0" step="0.01" placeholder="最低价格">
+        </div>
+        
+        <div class="form-group">
+            <label for="priceMax">售价区间 (最大):</label>
+            <input type="number" id="priceMax" min="0" step="0.01" placeholder="最高价格">
+        </div>
+        
+        <div class="form-group">
+            <label for="skuCount">SKU数量 (最多1000条):</label>
+            <input type="number" id="skuCount" min="1" max="1000" value="10">
+        </div>
+        
+        <button onclick="generateProducts()">生成商品信息</button>
+        
+        <div id="results">
+            <h2>生成结果</h2>
+            <div id="tableContainer" style="max-height: 500px; overflow-y: auto;">
+                <table id="productTable">
+                    <thead>
+                        <tr>
+                            <th>序号</th>
+                            <th>品类</th>
+                            <th>一级子类</th>
+                            <th>二级子类</th>
+                            <th>三级子类</th>
+                            <th>商品名称</th>
+                            <th>商品编码</th>
+                            <th>商品条码</th>
+                            <th>规格</th>
+                            <th>售价</th>
+                            <th>颜色</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productTableBody">
+                        <!-- 这里将通过JavaScript填充数据 -->
+                    </tbody>
+                </table>
+            </div>
+            <button class="export-btn" onclick="exportToCSV()">导出为CSV</button>
+        </div>
+    </div>
+
+    <script>
+        // 品类及其子类数据
+        const categoryData = {
+            "服装": {
+                "一级子类": ["男装", "女装", "童装", "运动服", "内衣"],
+                "二级子类": {
+                    "男装": ["衬衫", "T恤", "裤装", "外套", "西装"],
+                    "女装": ["连衣裙", "上衣", "裙装", "裤装", "外套"],
+                    "童装": ["套装", "上衣", "裤装", "裙装", "外套"],
+                    "运动服": ["跑步服", "健身服", "瑜伽服", "篮球服", "足球服"],
+                    "内衣": ["文胸", "内裤", "睡衣", "袜子", "保暖衣"]
+                },
+                "三级子类": {
+                    "衬衫": ["商务衬衫", "休闲衬衫", "格子衬衫", "牛津衬衫", "法兰绒衬衫"],
+                    "T恤": ["圆领T恤", "V领T恤", "印花T恤", "纯色T恤", "条纹T恤"],
+                    "连衣裙": ["A字裙", "鱼尾裙", "蛋糕裙", "吊带裙", "背心裙"],
+                    "上衣": ["毛衣", "针织衫", "雪纺衫", "衬衫", "T恤"],
+                    "套装": ["运动套装", "学院套装", "休闲套装", "睡衣套装", "礼服套装"]
+                }
+            },
+            "食品": {
+                "一级子类": ["零食", "饮料", "糖果", "酒类", "烘焙"],
+                "二级子类": {
+                    "零食": ["薯片", "坚果", "饼干", "膨化食品", "肉干"],
+                    "饮料": ["碳酸饮料", "果汁", "牛奶", "茶饮", "咖啡"],
+                    "糖果": ["巧克力", "棒棒糖", "硬糖", "软糖", "口香糖"],
+                    "酒类": ["啤酒", "红酒", "白酒", "洋酒", "果酒"],
+                    "烘焙": ["面包", "蛋糕", "饼干", "点心", "派"]
+                },
+                "三级子类": {
+                    "薯片": ["原味薯片", "番茄味薯片", "烧烤味薯片", "芥末味薯片", "海苔味薯片"],
+                    "坚果": ["杏仁", "核桃", "腰果", "花生", "开心果"],
+                    "碳酸饮料": ["可乐", "雪碧", "芬达", "苏打水", "汽水"],
+                    "果汁": ["橙汁", "苹果汁", "葡萄汁", "芒果汁", "西瓜汁"],
+                    "巧克力": ["黑巧克力", "白巧克力", "牛奶巧克力", "夹心巧克力", "巧克力棒"]
+                }
+            },
+            "电子产品": {
+                "一级子类": ["手机", "电脑", "相机", "音响", "配件"],
+                "二级子类": {
+                    "手机": ["智能手机", "功能手机", "平板电话", "折叠手机", "商务手机"],
+                    "电脑": ["笔记本电脑", "台式电脑", "平板电脑", "工作站", "一体机"],
+                    "相机": ["数码相机", "单反相机", "微单相机", "拍立得", "运动相机"],
+                    "音响": ["家庭音响", "便携音响", "车载音响", "专业音响", "智能音响"],
+                    "配件": ["耳机", "充电器", "保护壳", "存储设备", "线材"]
+                },
+                "三级子类": {
+                    "智能手机": ["安卓手机", "苹果手机", "5G手机", "游戏手机", "商务手机"],
+                    "笔记本电脑": ["游戏本", "商务本", "轻薄本", "变形本", "创意本"],
+                    "数码相机": ["卡片机", "长焦相机", "高速相机", "微距相机", "水下相机"],
+                    "家庭音响": ["音箱", "功放", "低音炮", "环绕声系统", "智能音箱"],
+                    "耳机": ["有线耳机", "蓝牙耳机", "头戴式耳机", "入耳式耳机", "游戏耳机"]
+                }
+            },
+            "家具": {
+                "一级子类": ["卧室家具", "客厅家具", "餐厅家具", "书房家具", "户外家具"],
+                "二级子类": {
+                    "卧室家具": ["床", "衣柜", "床头柜", "梳妆台", "床垫"],
+                    "客厅家具": ["沙发", "茶几", "电视柜", "置物架", "装饰柜"],
+                    "餐厅家具": ["餐桌", "餐椅", "酒柜", "餐边柜", "吧台"],
+                    "书房家具": ["书桌", "书柜", "电脑桌", "办公椅", "文件柜"],
+                    "户外家具": ["户外桌椅", "遮阳伞", "秋千", "躺椅", "户外储物箱"]
+                },
+                "三级子类": {
+                    "床": ["单人床", "双人床", "儿童床", "高箱床", "沙发床"],
+                    "沙发": ["布艺沙发", "皮质沙发", "实木沙发", "沙发床", "转角沙发"],
+                    "餐桌": ["折叠餐桌", "伸缩餐桌", "大理石餐桌", "实木餐桌", "玻璃餐桌"],
+                    "书桌": ["写字台", "电脑桌", "书桌书柜组合", "折叠书桌", "升降书桌"],
+                    "户外桌椅": ["藤椅", "铸铝桌椅", "木质桌椅", "塑料桌椅", "折叠桌椅"]
+                }
+            },
+            "美妆": {
+                "一级子类": ["彩妆", "护肤", "香水", "美甲", "美发"],
+                "二级子类": {
+                    "彩妆": ["唇部彩妆", "眼部彩妆", "脸部彩妆", "套装", "工具"],
+                    "护肤": ["清洁", "水乳", "精华", "面膜", "防晒"],
+                    "香水": ["女士香水", "男士香水", "中性香水", "香体喷雾", "固体香水"],
+                    "美甲": ["指甲油", "卸甲水", "美甲工具", "贴片甲", "指甲护理"],
+                    "美发": ["洗发护发", "造型", "染发", "烫发", "头发护理"]
+                },
+                "三级子类": {
+                    "唇部彩妆": ["口红", "唇釉", "唇线笔", "唇彩", "润唇膏"],
+                    "清洁": ["洁面乳", "卸妆水", "洁面泡沫", "洁面油", "洁面巾"],
+                    "女士香水": ["花香调", "果香调", "木质调", "东方调", "清新调"],
+                    "指甲油": ["纯色指甲油", "闪粉指甲油", "磨砂指甲油", "变色指甲油", "速干指甲油"],
+                    "洗发护发": ["洗发水", "护发素", "发膜", "护发精油", "头皮护理"]
+                }
+            },
+            "母婴": {
+                "一级子类": ["婴儿用品", "孕妇用品", "童装", "童鞋", "玩具"],
+                "二级子类": {
+                    "婴儿用品": ["奶粉", "尿片", "喂养用品", "洗护用品", "婴儿床"],
+                    "孕妇用品": ["孕妇装", "孕妇护肤", "孕妇营养品", "孕妇枕", "妈咪包"],
+                    "童装": ["婴儿装", "男童装", "女童装", "儿童内衣", "儿童套装"],
+                    "童鞋": ["学步鞋", "运动鞋", "凉鞋", "皮鞋", "靴子"],
+                    "玩具": ["益智玩具", "积木", "毛绒玩具", "电动玩具", "户外玩具"]
+                },
+                "三级子类": {
+                    "奶粉": ["婴儿奶粉", "幼儿奶粉", "特殊配方奶粉", "有机奶粉", "羊奶粉"],
+                    "孕妇装": ["孕妇裙", "孕妇裤", "孕妇上衣", "孕妇内衣", "孕妇睡衣"],
+                    "婴儿装": ["连体衣", "礼盒套装", "外出服", "内衣", "睡衣"],
+                    "学步鞋": ["软底学步鞋", "防滑学步鞋", "叫叫鞋", "凉鞋", "靴子"],
+                    "益智玩具": ["拼图", "积木", "早教机", "认知卡", "音乐玩具"]
+                }
+            },
+            "玩具": {
+                "一级子类": ["益智玩具", "电动玩具", "户外玩具", "毛绒玩具", "积木"],
+                "二级子类": {
+                    "益智玩具": ["拼图", "迷宫", "科学玩具", "数学玩具", "语言玩具"],
+                    "电动玩具": ["遥控车", "电子宠物", "机器人", "轨道车", "飞机"],
+                    "户外玩具": ["滑板", "自行车", "球类", "沙滩玩具", "游泳用品"],
+                    "毛绒玩具": ["动物毛绒", "卡通人物", "抱枕", "布偶", "安抚玩具"],
+                    "积木": ["塑料积木", "木质积木", "金属积木", "磁力积木", "拼插积木"]
+                },
+                "三级子类": {
+                    "拼图": ["平面拼图", "立体拼图", "木质拼图", "泡沫拼图", "磁性拼图"],
+                    "遥控车": ["遥控赛车", "遥控坦克", "遥控越野车", "遥控卡车", "遥控漂移车"],
+                    "滑板": ["四轮滑板", "双翘滑板", "长板", "电动滑板", "儿童滑板"],
+                    "动物毛绒": ["熊猫", "狮子", "兔子", "狗狗", "猫咪"],
+                    "塑料积木": ["基础积木", "拼插积木", "齿轮积木", "积木套装", "微颗粒积木"]
+                }
+            },
+            "家电": {
+                "一级子类": ["厨房电器", "生活电器", "大家电", "个人护理", "智能家电"],
+                "二级子类": {
+                    "厨房电器": ["电饭煲", "微波炉", "电水壶", "榨汁机", "料理机"],
+                    "生活电器": ["吸尘器", "加湿器", "电风扇", "空气净化器", "挂烫机"],
+                    "大家电": ["电视", "冰箱", "洗衣机", "空调", "热水器"],
+                    "个人护理": ["电动牙刷", "电吹风", "剃须刀", "美容仪", "按摩仪"],
+                    "智能家电": ["智能音箱", "智能锁", "智能灯", "智能插座", "智能窗帘"]
+                },
+                "三级子类": {
+                    "电饭煲": ["普通电饭煲", "压力电饭煲", "多功能电饭煲", "迷你电饭煲", "智能电饭煲"],
+                    "吸尘器": ["手持吸尘器", "立式吸尘器", "扫地机器人", "无线吸尘器", "车载吸尘器"],
+                    "电视": ["液晶电视", "智能电视", "OLED电视", "投影电视", "曲面电视"],
+                    "电动牙刷": ["声波电动牙刷", "旋转电动牙刷", "儿童电动牙刷", "充电式电动牙刷", "智能电动牙刷"],
+                    "智能音箱": ["AI音箱", "蓝牙音箱", "WiFi音箱", "多功能音箱", "便携音箱"]
+                }
+            }
+        };
+        
+        // 颜色数据
+        const colors = [
+            "黑色", "白色", "红色", "蓝色", "绿色", "黄色", "紫色", "粉色", 
+            "橙色", "灰色", "棕色", "银色", "金色", "藏青", "卡其", "酒红"
+        ];
+        
+        // 规格选项
+        let specs = ["S", "M", "L", "XL", "XXL", "XXXL"];
+
+        // 随机生成6位商品编码
+        function generateProductCode() {
+            return Math.floor(100000 + Math.random() * 900000).toString();
+        }
+
+        // 随机生成13位条码，以69开头
+        function generateBarcode() {
+            return "69" + Array(11).fill(0).map(() => Math.floor(Math.random() * 10)).join("");
+        }
+
+        // 随机生成售价
+        function generatePrice(min, max) {
+            return (Math.random() * (max - min) + min).toFixed(2);
+        }
+
+        // 随机获取数组中的一个元素
+        function getRandomElement(arr) {
+            if (!arr || arr.length === 0) return "未知";
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        // 生成规格范围内的规格
+        function getSpecsInRange(min, max) {
+            let specsList = [];
+            
+            if (!min) min = "S";
+            if (!max) max = "XXXL";
+            
+            let startIndex = specs.indexOf(min) !== -1 ? specs.indexOf(min) : 0;
+            let endIndex = specs.indexOf(max) !== -1 ? specs.indexOf(max) : specs.length - 1;
+            
+            if (startIndex > endIndex) {
+                let temp = startIndex;
+                startIndex = endIndex;
+                endIndex = temp;
+            }
+            
+            for (let i = startIndex; i <= endIndex; i++) {
+                specsList.push(specs[i]);
+            }
+            
+            if (specsList.length === 0) {
+                return specs;
+            }
+            
+            return specsList;
+        }
+        
+        // 生成商品
+        function generateProducts() {
+            const category = document.getElementById("category").value;
+            const specMin = document.getElementById("specMin").value;
+            const specMax = document.getElementById("specMax").value;
+            const priceMin = parseFloat(document.getElementById("priceMin").value) || 10;
+            const priceMax = parseFloat(document.getElementById("priceMax").value) || 1000;
+            const skuCount = parseInt(document.getElementById("skuCount").value) || 10;
+            
+            // 获取规格范围
+            const availableSpecs = getSpecsInRange(specMin, specMax);
+            
+            // 获取品类相关的子类数据
+            const categoryInfo = categoryData[category] || {};
+            const level1Categories = categoryInfo["一级子类"] || [];
+            const level2CategoriesMap = categoryInfo["二级子类"] || {};
+            const level3CategoriesMap = categoryInfo["三级子类"] || {};
+            
+            // 清空表格
+            const tableBody = document.getElementById("productTableBody");
+            tableBody.innerHTML = "";
+            
+            // 生成商品数据
+            for (let i = 0; i < skuCount; i++) {
+                const row = document.createElement("tr");
+                
+                // 随机选择一级子类
+                const level1 = getRandomElement(level1Categories);
+                
+                // 根据一级子类选择二级子类
+                const level2Options = level2CategoriesMap[level1] || [];
+                const level2 = getRandomElement(level2Options);
+                
+                // 根据二级子类选择三级子类
+                const level3Options = level3CategoriesMap[level2] || [];
+                const level3 = getRandomElement(level3Options);
+                
+                // 随机选择规格和颜色
+                const spec = getRandomElement(availableSpecs);
+                const color = getRandomElement(colors);
+                
+                // 生成商品名称 (三级子类 + 品类 + 颜色)
+                const productName = `${level3}${category}${color}`;
+                
+                // 生成售价、商品编码和条码
+                const price = generatePrice(priceMin, priceMax);
+                const productCode = generateProductCode();
+                const barcode = generateBarcode();
+                
+                // 填充数据
+                row.innerHTML = `
+                    <td>${i+1}</td>
+                    <td>${category}</td>
+                    <td>${level1}</td>
+                    <td>${level2}</td>
+                    <td>${level3}</td>
+                    <td>${productName}</td>
+                    <td>${productCode}</td>
+                    <td>${barcode}</td>
+                    <td>${spec}</td>
+                    <td>${price}</td>
+                    <td>${color}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            }
+        }
+        
+        // 导出CSV文件
+        function exportToCSV() {
+            const table = document.getElementById("productTable");
+            let csv = [];
+            
+            // 获取表头
+            const headerRow = table.querySelector("thead tr");
+            const headers = Array.from(headerRow.querySelectorAll("th")).map(th => th.textContent);
+            csv.push(headers.join(","));
+            
+            // 获取数据行
+            const rows = table.querySelectorAll("tbody tr");
+            for (const row of rows) {
+                const data = Array.from(row.querySelectorAll("td")).map(td => {
+                    // 处理内容中的逗号，用引号包裹
+                    const content = td.textContent;
+                    return content.includes(",") ? `"${content}"` : content;
+                });
+                csv.push(data.join(","));
+            }
+            
+            // 创建CSV内容
+            const csvContent = csv.join("\n");
+            
+            // 创建下载链接
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "商品信息.csv");
+            link.style.display = "none";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
